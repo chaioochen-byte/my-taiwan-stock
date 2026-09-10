@@ -65,7 +65,7 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 <script>
 const API_BASE="https://calm-wind-e623.chaioochen.workers.dev";
 const REFRESH_MS=30000;
-const API_URL=(symbols)=>API_BASE+'/?symbols='+encodeURIComponent(symbols.join(','));
+const API_URL=(symbols)=>API_BASE+'/?symbols='+encodeURIComponent(symbols.join(','))+'&_='+Date.now();
 
 const DEFAULT_STOCKS=[
 ["0050","元大台灣50",900,74.15],["00935","野村臺灣新科技50",10,56.89],
@@ -86,30 +86,37 @@ function signed(n){return `${n>=0?'+':''}${money(n)}`}
 function renderHold(){
   const rows=stocks.map(s=>{
     const q=quotes[s[0]]||{};
-    const price=Number.isFinite(q.price)?q.price:s[3];
-    const pnl=(price-s[3])*s[2];
+    const hasLive=Number.isFinite(q.price);
+    const price=hasLive?q.price:null;
+    const pnl=hasLive?(price-s[3])*s[2]:null;
     return `<div class="stock">
       <div class="top"><div><span class="name">${s[1]}</span><span class="code">${s[0]}</span></div>
-      <div class="price">${money(price)}</div></div>
+      <div class="price">${hasLive?money(price):'—'}</div></div>
       <div class="meta"><span class="pill">${s[2]} 股</span>
-      <span>市值 ${money(s[2]*price)}</span>
-      <span class="${pnl>=0?'up':'down'}">損益 ${signed(pnl)}</span>
+      <span>市值 ${hasLive?money(s[2]*price):'—'}</span>
+      <span class="${hasLive?(pnl>=0?'up':'down'):''}">損益 ${hasLive?signed(pnl):'—'}</span>
       ${q.previousClose!=null?`<span>昨收 ${money(q.previousClose)}</span>`:''}</div>
     </div>`
   }).join('');
   document.getElementById('stocks').innerHTML=rows;
 
   const totalValue=stocks.reduce((a,s)=>{
-    const p=Number.isFinite(quotes[s[0]]?.price)?quotes[s[0]].price:s[3];
-    return a+s[2]*p;
+    const p=Number.isFinite(quotes[s[0]]?.price)?quotes[s[0]].price:null;
+    return a+(p==null?0:s[2]*p);
   },0);
   const totalCost=stocks.reduce((a,s)=>a+s[2]*s[3],0);
+  const liveCount=stocks.filter(s=>Number.isFinite(quotes[s[0]]?.price)).length;
   const totalPnl=totalValue-totalCost;
   document.querySelector('#hold .card:nth-child(1) .num').textContent=money(totalValue);
   document.querySelector('#hold .card:nth-child(2) .num').textContent=money(totalCost);
   const totalEl=document.querySelector('#hold .card.big .num');
-  totalEl.textContent=`${signed(totalPnl)}　(${totalCost?((totalPnl/totalCost)*100).toFixed(2):'0.00'}%)`;
-  totalEl.className=`num ${totalPnl>=0?'up':'down'}`;
+  if(liveCount===stocks.length){
+    totalEl.textContent=`${signed(totalPnl)}　(${totalCost?((totalPnl/totalCost)*100).toFixed(2):'0.00'}%)`;
+    totalEl.className=`num ${totalPnl>=0?'up':'down'}`;
+  }else{
+    totalEl.textContent='—';
+    totalEl.className='num';
+  }
 }
 
 function renderList(type){
@@ -159,14 +166,15 @@ async function loadQuotes(){
     .filter(x=>/^\d{4,6}$/.test(x)).slice(0,30);
   if(!symbols.length)return;
   try{
-    const r=await fetch(API_URL(symbols),{method:'GET',cache:'no-store',mode:'cors'});
+    const r=await fetch(API_URL(symbols),{method:'GET',cache:'no-store'});
     if(!r.ok)throw new Error('Worker '+r.status);
     const data=await r.json();
     if(!data || data.success!==true || !Array.isArray(data.quotes)) throw new Error('報價資料格式錯誤');
-    data.quotes.forEach(q=>{if(q.symbol && !q.error && q.price!=null) quotes[q.symbol]=q});
+    data.quotes.forEach(q=>{if(q.symbol && !q.error && q.price!=null) quotes[String(q.symbol)]=q});
     render();
     document.querySelector('.header p').textContent=`自動更新中｜每 30 秒更新一次｜最後更新 ${new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
   }catch(e){
+    console.error('報價更新失敗',e);
     document.querySelector('.header p').textContent='目前無法取得即時行情，請稍後再試';
   }
 }
