@@ -34,7 +34,7 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 <div class="card big"><div class="label">截圖基準總損益</div><div class="num up">+33,685　(+29.29%)</div></div>
 </div>
 <div class="section"><h2>目前持股</h2><div id="stocks"></div></div>
-<div class="note">提醒：目前顯示的是你截圖中的基準資料，尚未連接即時行情；之後接上資料源後，這裡可以改成自動更新。</div>
+<div class="note">行情已連接 Fugle｜每 30 秒自動更新一次。價格、市值、持股損益會隨行情更新。</div>
 </div>
 
 <div id="watch" style="display:none">
@@ -43,24 +43,116 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 
 <div id="day" style="display:none">
 <div class="section"><h2>⚡ 今日當沖觀察</h2><div class="toolbar"><input id="dcode" placeholder="股票代號，例如 2330"><button onclick="add('day')">加入</button></div><div id="daylist"></div></div>
-<div class="note">當沖模式會與你的長期持股分開。未來接上即時行情後，可再加入「爆量、突破、漲跌幅、均線」等條件篩選。</div>
+<div class="note">當沖模式與長期持股分開。行情會自動更新。</div>
 </div>
 <div class="footer"></div>
 </main>
 <script>
+const API_BASE="https://calm-wind-e623.chaioochen.workers.dev";
+const REFRESH_MS=30000;
+
 const stocks=[
-["0050","元大台灣50",900,109.15,31442],["00935","野村臺灣新科技50",10,59.7,29],
-["2344","華邦電",20,179.5,-158],["2383","台光電",3,5375,-250],
-["2408","南亞科",4,515,-70],["2454","聯發科",2,4720,1575],
-["3042","晶技",20,180.5,-65],["3189","景碩",2,826,4],
-["3374","精材",10,488,1689],["4916","事欣科",1,94.7,-6],
-["4979","華星光",5,571,-256],["5351","鈺創",36,115.5,-104],
-["6488","環球晶",2,917,-145]];
-document.getElementById('stocks').innerHTML=stocks.map(s=>`<div class="stock"><div class="top"><div><span class="name">${s[1]}</span><span class="code">${s[0]}</span></div><div class="price">${s[3].toLocaleString()}</div></div><div class="meta"><span class="pill">${s[2]} 股</span><span>市值 ${(s[2]*s[3]).toLocaleString()}</span><span class="${s[4]>=0?'up':'down'}">損益 ${s[4]>=0?'+':''}${s[4].toLocaleString()}</span></div></div>`).join('');
-let watch=JSON.parse(localStorage.getItem('mywatch')||'[]'), day=JSON.parse(localStorage.getItem('myday')||'[]');
-function tab(id,btn){['hold','watch','day'].forEach(x=>document.getElementById(x).style.display=x===id?'block':'none');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active')}
-function render(){document.getElementById('watchlist').innerHTML=watch.length?watch.map((x,i)=>`<div class="stock"><div class="top"><b>${x}</b><button onclick="removeItem('watch',${i})">移除</button></div></div>`).join(''):'<p class="label">目前沒有觀察股。</p>';document.getElementById('daylist').innerHTML=day.length?day.map((x,i)=>`<div class="stock"><div class="top"><b>${x}</b><button onclick="removeItem('day',${i})">移除</button></div></div>`).join(''):'<p class="label">今天尚未加入當沖觀察股。</p>'}
-function add(type){let id=type==='watch'?'wcode':'dcode',v=document.getElementById(id).value.trim();if(!v)return;(type==='watch'?watch:day).push(v);localStorage.setItem(type==='watch'?'mywatch':'myday',JSON.stringify(type==='watch'?watch:day));document.getElementById(id).value='';render()}
-function removeItem(type,i){let a=type==='watch'?watch:day;a.splice(i,1);localStorage.setItem(type==='watch'?'mywatch':'myday',JSON.stringify(a));render()}render();
+["0050","元大台灣50",900,74.15],["00935","野村臺灣新科技50",10,56.89],
+["2344","華邦電",20,187.53],["2383","台光電",3,5459.5],
+["2408","南亞科",4,532.86],["2454","聯發科",2,3932.5],
+["3042","晶技",20,183.87],["3189","景碩",2,824.65],
+["3374","精材",10,318.51],["4916","事欣科",1,100.15],
+["4979","華星光",5,622.56],["5351","鈺創",36,118.47],
+["6488","環球晶",2,990.89]
+];
+
+let quotes={};
+let watch=JSON.parse(localStorage.getItem('mywatch')||'[]');
+let day=JSON.parse(localStorage.getItem('myday')||'[]');
+
+function money(n){return Number.isFinite(n)?n.toLocaleString('zh-TW',{maximumFractionDigits:2}):'—'}
+function signed(n){return `${n>=0?'+':''}${money(n)}`}
+function renderHold(){
+  const rows=stocks.map(s=>{
+    const q=quotes[s[0]]||{};
+    const price=Number.isFinite(q.price)?q.price:s[3];
+    const pnl=(price-s[3])*s[2];
+    return `<div class="stock">
+      <div class="top"><div><span class="name">${s[1]}</span><span class="code">${s[0]}</span></div>
+      <div class="price">${money(price)}</div></div>
+      <div class="meta"><span class="pill">${s[2]} 股</span>
+      <span>市值 ${money(s[2]*price)}</span>
+      <span class="${pnl>=0?'up':'down'}">損益 ${signed(pnl)}</span>
+      ${q.previousClose!=null?`<span>昨收 ${money(q.previousClose)}</span>`:''}</div>
+    </div>`
+  }).join('');
+  document.getElementById('stocks').innerHTML=rows;
+
+  const totalValue=stocks.reduce((a,s)=>{
+    const p=Number.isFinite(quotes[s[0]]?.price)?quotes[s[0]].price:s[3];
+    return a+s[2]*p;
+  },0);
+  const totalCost=stocks.reduce((a,s)=>a+s[2]*s[3],0);
+  const totalPnl=totalValue-totalCost;
+  document.querySelector('#hold .card:nth-child(1) .num').textContent=money(totalValue);
+  document.querySelector('#hold .card:nth-child(2) .num').textContent=money(totalCost);
+  const totalEl=document.querySelector('#hold .card.big .num');
+  totalEl.textContent=`${signed(totalPnl)}　(${totalCost?((totalPnl/totalCost)*100).toFixed(2):'0.00'}%)`;
+  totalEl.className=`num ${totalPnl>=0?'up':'down'}`;
+}
+
+function renderList(type){
+  const arr=type==='watch'?watch:day;
+  const el=document.getElementById(type==='watch'?'watchlist':'daylist');
+  el.innerHTML=arr.length?arr.map((x,i)=>{
+    const q=quotes[x]||{};
+    const label=q.name?`${q.name} <span class="code">${x}</span>`:x;
+    return `<div class="stock"><div class="top"><div><b>${label}</b></div>
+      <div class="price">${q.price!=null?money(q.price):'—'}</div></div>
+      <div class="meta">
+      ${q.previousClose!=null?`<span>昨收 ${money(q.previousClose)}</span>`:''}
+      ${q.previousClose!=null&&q.price!=null?`<span class="${q.price>=q.previousClose?'up':'down'}">${q.price>=q.previousClose?'+':''}${money(q.price-q.previousClose)}</span>`:''}
+      <button onclick="removeItem('${type}',${i})">移除</button>
+      </div></div>`;
+  }).join(''):(type==='watch'?'<p class="label">目前沒有觀察股。</p>':'<p class="label">今天尚未加入當沖觀察股。</p>');
+}
+
+function render(){renderHold();renderList('watch');renderList('day')}
+
+async function loadQuotes(){
+  const symbols=[...new Set([...stocks.map(s=>s[0]),...watch,...day])]
+    .filter(x=>/^\d{4,6}$/.test(x)).slice(0,30);
+  if(!symbols.length)return;
+  try{
+    const r=await fetch(`${API_BASE}/?symbols=${symbols.join(',')}`,{cache:'no-store'});
+    if(!r.ok)throw new Error('Worker '+r.status);
+    const data=await r.json();
+    if(data.quotes)data.quotes.forEach(q=>{if(q.symbol&&!q.error)quotes[q.symbol]=q});
+    render();
+    document.querySelector('.header p').textContent=`自動更新中｜每 30 秒更新一次｜最後更新 ${new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+  }catch(e){
+    document.querySelector('.header p').textContent='目前無法取得即時行情，請稍後再試';
+  }
+}
+
+function tab(id,btn){
+  ['hold','watch','day'].forEach(x=>document.getElementById(x).style.display=x===id?'block':'none');
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active')
+}
+function add(type){
+  const id=type==='watch'?'wcode':'dcode';
+  const v=document.getElementById(id).value.trim();
+  if(!/^\d{4,6}$/.test(v))return;
+  const arr=type==='watch'?watch:day;
+  if(!arr.includes(v))arr.push(v);
+  localStorage.setItem(type==='watch'?'mywatch':'myday',JSON.stringify(arr));
+  document.getElementById(id).value='';
+  render();loadQuotes();
+}
+function removeItem(type,i){
+  const arr=type==='watch'?watch:day;
+  arr.splice(i,1);
+  localStorage.setItem(type==='watch'?'mywatch':'myday',JSON.stringify(arr));
+  render();loadQuotes();
+}
+render();
+loadQuotes();
+setInterval(loadQuotes,REFRESH_MS);
 </script>
 </body></html>
