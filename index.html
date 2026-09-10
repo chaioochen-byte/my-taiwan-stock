@@ -16,6 +16,11 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 .toolbar{display:flex;gap:8px}.toolbar input{flex:1;min-width:0;border:1px solid #cbdadd;border-radius:10px;padding:11px}.toolbar button{border:0;background:#12666b;color:#fff;border-radius:10px;padding:0 14px;font-weight:700}
 .note{background:#fff8e8;border-radius:13px;padding:12px;font-size:13px;line-height:1.6;color:#705b30;margin-top:12px}
 .footer{height:30px}
+.small-btn{float:right;border:0;background:#12666b;color:#fff;border-radius:9px;padding:7px 10px;font-weight:700}
+.remove-btn{border:0;background:#edf3f4;color:#35606b;border-radius:8px;padding:5px 9px}
+.modal{position:fixed;inset:0;background:#0005;display:flex;align-items:center;justify-content:center;z-index:20}
+.modal-box{width:min(92vw,390px);background:#fff;border-radius:16px;padding:18px}
+.modal-box h3{margin:0 0 12px}.modal-box label{display:block;font-size:13px;margin:9px 0 5px}.modal-box input,.modal-box select{width:100%;padding:10px;border:1px solid #cbdadd;border-radius:10px}.modal-actions{display:flex;gap:8px;margin-top:14px}.modal-actions button{flex:1;padding:10px;border:0;border-radius:10px;font-weight:700}
 @media(max-width:390px){main{padding:10px}.cards{gap:7px}.card{padding:12px}.num{font-size:19px}.nav{top:89px}}
 </style>
 </head>
@@ -33,7 +38,7 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 <div class="card"><div class="label">截圖基準總成本</div><div class="num">115,012</div></div>
 <div class="card big"><div class="label">截圖基準總損益</div><div class="num up">+33,685　(+29.29%)</div></div>
 </div>
-<div class="section"><h2>目前持股</h2><div id="stocks"></div></div>
+<div class="section"><h2>目前持股 <button class="small-btn" onclick="openTrade()">＋新增交易</button></h2><div id="stocks"></div></div>
 <div class="note">行情已連接 Fugle｜每 30 秒自動更新一次。價格、市值、持股損益會隨行情更新。</div>
 </div>
 
@@ -47,11 +52,22 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 </div>
 <div class="footer"></div>
 </main>
+<div id="tradeModal" class="modal" style="display:none">
+  <div class="modal-box">
+    <h3>新增交易</h3>
+    <label>股票代號</label><input id="tradeSymbol" inputmode="numeric" placeholder="例如 0050">
+    <label>動作</label><select id="tradeSide"><option value="buy">買進</option><option value="sell">賣出</option></select>
+    <label>股數</label><input id="tradeShares" type="number" min="1" inputmode="numeric" placeholder="例如 100">
+    <label>實際成交價</label><input id="tradePrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例如 108">
+    <div class="modal-actions"><button onclick="saveTrade()">儲存</button><button onclick="closeTrade()">取消</button></div>
+  </div>
+</div>
 <script>
 const API_BASE="https://calm-wind-e623.chaioochen.workers.dev";
 const REFRESH_MS=30000;
+const API_URL=(symbols)=>API_BASE+'/?symbols='+encodeURIComponent(symbols.join(','));
 
-const stocks=[
+const DEFAULT_STOCKS=[
 ["0050","元大台灣50",900,74.15],["00935","野村臺灣新科技50",10,56.89],
 ["2344","華邦電",20,187.53],["2383","台光電",3,5459.5],
 ["2408","南亞科",4,532.86],["2454","聯發科",2,3932.5],
@@ -60,7 +76,7 @@ const stocks=[
 ["4979","華星光",5,622.56],["5351","鈺創",36,118.47],
 ["6488","環球晶",2,990.89]
 ];
-
+let stocks=JSON.parse(localStorage.getItem('myholdings')||'null')||DEFAULT_STOCKS;
 let quotes={};
 let watch=JSON.parse(localStorage.getItem('mywatch')||'[]');
 let day=JSON.parse(localStorage.getItem('myday')||'[]');
@@ -112,6 +128,30 @@ function renderList(type){
   }).join(''):(type==='watch'?'<p class="label">目前沒有觀察股。</p>':'<p class="label">今天尚未加入當沖觀察股。</p>');
 }
 
+function openTrade(){document.getElementById('tradeModal').style.display='flex'}
+function closeTrade(){document.getElementById('tradeModal').style.display='none'}
+function saveTrade(){
+  const symbol=document.getElementById('tradeSymbol').value.trim();
+  const side=document.getElementById('tradeSide').value;
+  const shares=Number(document.getElementById('tradeShares').value);
+  const price=Number(document.getElementById('tradePrice').value);
+  if(!/^\d{4,6}$/.test(symbol)||shares<=0||price<=0){alert('請輸入正確的股票代號、股數與成交價');return}
+  const i=stocks.findIndex(x=>x[0]===symbol);
+  if(i<0){
+    if(side==='sell'){alert('目前沒有這檔持股，無法賣出');return}
+    stocks.push([symbol,symbol,shares,price]);
+  }else{
+    const h=stocks[i];
+    if(side==='buy'){
+      h[3]=(h[2]*h[3]+shares*price)/(h[2]+shares); h[2]+=shares;
+    }else{
+      if(shares>h[2]){alert('賣出股數不能超過目前持股');return}
+      h[2]-=shares; if(h[2]===0)stocks.splice(i,1);
+    }
+  }
+  localStorage.setItem('myholdings',JSON.stringify(stocks));
+  closeTrade(); render(); loadQuotes();
+}
 function render(){renderHold();renderList('watch');renderList('day')}
 
 async function loadQuotes(){
@@ -119,10 +159,11 @@ async function loadQuotes(){
     .filter(x=>/^\d{4,6}$/.test(x)).slice(0,30);
   if(!symbols.length)return;
   try{
-    const r=await fetch(`${API_BASE}/?symbols=${symbols.join(',')}`,{cache:'no-store'});
+    const r=await fetch(API_URL(symbols),{method:'GET',cache:'no-store',mode:'cors'});
     if(!r.ok)throw new Error('Worker '+r.status);
     const data=await r.json();
-    if(data.quotes)data.quotes.forEach(q=>{if(q.symbol&&!q.error)quotes[q.symbol]=q});
+    if(!data || data.success!==true || !Array.isArray(data.quotes)) throw new Error('報價資料格式錯誤');
+    data.quotes.forEach(q=>{if(q.symbol && !q.error && q.price!=null) quotes[q.symbol]=q});
     render();
     document.querySelector('.header p').textContent=`自動更新中｜每 30 秒更新一次｜最後更新 ${new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
   }catch(e){
