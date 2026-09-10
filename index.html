@@ -64,7 +64,7 @@ main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-
 </div>
 <script>
 const API_BASE="https://calm-wind-e623.chaioochen.workers.dev";
-const REFRESH_MS=30000;
+const REFRESH_MS=30000; // 暫時診斷版：只增加連線錯誤提示，不改動原本版面功能。
 const API_URL=(symbols)=>API_BASE+'/?symbols='+encodeURIComponent(symbols.join(','))+'&_='+Date.now();
 
 const DEFAULT_STOCKS=[
@@ -165,17 +165,48 @@ async function loadQuotes(){
   const symbols=[...new Set([...stocks.map(s=>s[0]),...watch,...day])]
     .filter(x=>/^\d{4,6}$/.test(x)).slice(0,30);
   if(!symbols.length)return;
+
+  const debug = document.getElementById('debugStatus');
+  if(debug) debug.textContent='行情連線測試中…';
+
   try{
+    // 先只測 0050，方便判斷是不是瀏覽器連線/CORS 問題。
+    const testUrl = API_URL(['0050']);
+    const testResponse = await fetch(testUrl,{method:'GET',cache:'no-store'});
+    if(!testResponse.ok) throw new Error('Worker HTTP '+testResponse.status);
+
+    const testText = await testResponse.text();
+    let testData;
+    try{
+      testData = JSON.parse(testText);
+    }catch(_){
+      throw new Error('Worker 回傳不是 JSON');
+    }
+    if(!testData || testData.success!==true || !Array.isArray(testData.quotes)){
+      throw new Error('Worker 回傳格式錯誤');
+    }
+
+    // 0050 測試成功後，再取得全部持股/觀察/當沖報價。
     const r=await fetch(API_URL(symbols),{method:'GET',cache:'no-store'});
-    if(!r.ok)throw new Error('Worker '+r.status);
+    if(!r.ok)throw new Error('Worker HTTP '+r.status);
     const data=await r.json();
     if(!data || data.success!==true || !Array.isArray(data.quotes)) throw new Error('報價資料格式錯誤');
+
     data.quotes.forEach(q=>{if(q.symbol && !q.error && q.price!=null) quotes[String(q.symbol)]=q});
     render();
-    document.querySelector('.header p').textContent=`自動更新中｜每 30 秒更新一次｜最後更新 ${new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+
+    const okCount = data.quotes.filter(q=>q.symbol && !q.error && q.price!=null).length;
+    const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.querySelector('.header p').textContent=`自動更新中｜每 30 秒更新一次｜最後更新 ${now}`;
+    if(debug) debug.textContent=`行情已連線｜成功取得 ${okCount} 檔`;
   }catch(e){
     console.error('報價更新失敗',e);
     document.querySelector('.header p').textContent='目前無法取得即時行情，請稍後再試';
+    if(debug){
+      const name = e && e.name ? e.name : 'Error';
+      const msg = e && e.message ? e.message : String(e);
+      debug.textContent=`行情連線失敗｜${name}：${msg}`;
+    }
   }
 }
 
