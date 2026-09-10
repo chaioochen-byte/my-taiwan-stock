@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#12666b">
+<title>我的台股監控</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f7f8;color:#173b4b;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",sans-serif}
+.header{background:linear-gradient(145deg,#12666b,#174c63);color:#fff;padding:calc(18px + env(safe-area-inset-top)) 18px 18px;position:sticky;top:0;z-index:5}
+.header h1{font-size:24px;margin:0 0 4px}.header p{margin:0;opacity:.82;font-size:13px}
+.nav{display:flex;gap:8px;padding:12px;background:#fff;position:sticky;top:91px;z-index:4;overflow:auto;border-bottom:1px solid #e2eaec}
+.nav button{white-space:nowrap;border:0;border-radius:20px;padding:9px 14px;background:#edf3f4;color:#35606b;font-weight:700}.nav button.active{background:#12666b;color:#fff}
+main{padding:14px;max-width:760px;margin:auto}.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:#fff;border-radius:16px;padding:14px;box-shadow:0 2px 10px #153b4b12}.card.big{grid-column:span 2}.label{font-size:12px;color:#71838a}.num{font-size:22px;font-weight:800;margin-top:4px}.up{color:#d84d45}.down{color:#14966c}.section{margin-top:14px}.section h2{font-size:18px;margin:0 0 10px}
+.stock{background:#fff;border-radius:15px;padding:13px 14px;margin:8px 0;box-shadow:0 2px 8px #153b4b0d}.top{display:flex;justify-content:space-between;align-items:center}.name{font-weight:800}.code{font-size:12px;color:#78909a;margin-left:6px}.price{font-size:20px;font-weight:800}.meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px;font-size:12px;color:#6c8088}.pill{background:#edf3f4;padding:4px 7px;border-radius:8px}
+.toolbar{display:flex;gap:8px}.toolbar input{flex:1;min-width:0;border:1px solid #cbdadd;border-radius:10px;padding:11px}.toolbar button{border:0;background:#12666b;color:#fff;border-radius:10px;padding:0 14px;font-weight:700}
+.note{background:#fff8e8;border-radius:13px;padding:12px;font-size:13px;line-height:1.6;color:#705b30;margin-top:12px}
+.footer{height:30px}
+@media(max-width:390px){main{padding:10px}.cards{gap:7px}.card{padding:12px}.num{font-size:19px}.nav{top:89px}}
+</style>
+</head>
+<body>
+<header class="header"><h1>📈 我的台股監控</h1><p>持股、觀察、當沖分開管理｜鴻友不列入</p></header>
+<div class="nav">
+<button class="active" onclick="tab('hold',this)">📦 我的持股</button>
+<button onclick="tab('watch',this)">👀 觀察</button>
+<button onclick="tab('day',this)">⚡ 當沖</button>
+</div>
+<main>
+<div id="hold">
+<div class="cards">
+<div class="card"><div class="label">截圖基準總市值</div><div class="num">149,130</div></div>
+<div class="card"><div class="label">截圖基準總成本</div><div class="num">115,012</div></div>
+<div class="card big"><div class="label">截圖基準總損益</div><div class="num up">+33,685　(+29.29%)</div></div>
+</div>
+<div class="section"><h2>目前持股</h2><div id="stocks"></div></div>
+<div class="note">提醒：目前顯示的是你截圖中的基準資料，尚未連接即時行情；之後接上資料源後，這裡可以改成自動更新。</div>
+</div>
+
+<div id="watch" style="display:none">
+<div class="section"><h2>👀 觀察清單</h2><div class="toolbar"><input id="wcode" placeholder="股票代號，例如 2330"><button onclick="add('watch')">加入</button></div><div id="watchlist"></div></div>
+</div>
+
+<div id="day" style="display:none">
+<div class="section"><h2>⚡ 今日當沖觀察</h2><div class="toolbar"><input id="dcode" placeholder="股票代號，例如 2330"><button onclick="add('day')">加入</button></div><div id="daylist"></div></div>
+<div class="note">當沖模式會與你的長期持股分開。未來接上即時行情後，可再加入「爆量、突破、漲跌幅、均線」等條件篩選。</div>
+</div>
+<div class="footer"></div>
+</main>
+<script>
+const stocks=[
+["0050","元大台灣50",900,109.15,31442],["00935","野村臺灣新科技50",10,59.7,29],
+["2344","華邦電",20,179.5,-158],["2383","台光電",3,5375,-250],
+["2408","南亞科",4,515,-70],["2454","聯發科",2,4720,1575],
+["3042","晶技",20,180.5,-65],["3189","景碩",2,826,4],
+["3374","精材",10,488,1689],["4916","事欣科",1,94.7,-6],
+["4979","華星光",5,571,-256],["5351","鈺創",36,115.5,-104],
+["6488","環球晶",2,917,-145]];
+document.getElementById('stocks').innerHTML=stocks.map(s=>`<div class="stock"><div class="top"><div><span class="name">${s[1]}</span><span class="code">${s[0]}</span></div><div class="price">${s[3].toLocaleString()}</div></div><div class="meta"><span class="pill">${s[2]} 股</span><span>市值 ${(s[2]*s[3]).toLocaleString()}</span><span class="${s[4]>=0?'up':'down'}">損益 ${s[4]>=0?'+':''}${s[4].toLocaleString()}</span></div></div>`).join('');
+let watch=JSON.parse(localStorage.getItem('mywatch')||'[]'), day=JSON.parse(localStorage.getItem('myday')||'[]');
+function tab(id,btn){['hold','watch','day'].forEach(x=>document.getElementById(x).style.display=x===id?'block':'none');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active')}
+function render(){document.getElementById('watchlist').innerHTML=watch.length?watch.map((x,i)=>`<div class="stock"><div class="top"><b>${x}</b><button onclick="removeItem('watch',${i})">移除</button></div></div>`).join(''):'<p class="label">目前沒有觀察股。</p>';document.getElementById('daylist').innerHTML=day.length?day.map((x,i)=>`<div class="stock"><div class="top"><b>${x}</b><button onclick="removeItem('day',${i})">移除</button></div></div>`).join(''):'<p class="label">今天尚未加入當沖觀察股。</p>'}
+function add(type){let id=type==='watch'?'wcode':'dcode',v=document.getElementById(id).value.trim();if(!v)return;(type==='watch'?watch:day).push(v);localStorage.setItem(type==='watch'?'mywatch':'myday',JSON.stringify(type==='watch'?watch:day));document.getElementById(id).value='';render()}
+function removeItem(type,i){let a=type==='watch'?watch:day;a.splice(i,1);localStorage.setItem(type==='watch'?'mywatch':'myday',JSON.stringify(a));render()}render();
+</script>
+</body></html>
